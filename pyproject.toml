@@ -2,26 +2,14 @@
 name = "comfyui-negpip-zimage"
 description = "Standalone NegPiP negative prompt weighting for Z-Image and Z-Image Turbo in ComfyUI."
 version = "1.2.0"
-authors = [{ name = "cyberdeliaAI" }]
-license = { text = "GNU Affero General Public License v3" }
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
 
 [project.urls]
 Repository = "https://github.com/cyberdeliaAI/ComfyUI-NegPiP-ZImage"
-Issues = "https://github.com/cyberdeliaAI/ComfyUI-NegPiP-ZImage/issues"
 
 [tool.comfy]
-PublisherId = "cyberdeliaAI"
+PublisherId = "cyberdelia"
 DisplayName = "NegPiP for Z-Image"
-Icon = ""
-
-[tool.ruff]
-line-length = 100
-lint.select = ["F", "I", "W"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["comfy", "comfy_api"]
-
-[tool.pyright]
-extraPaths = ["../../"]
+Icon = "https://raw.githubusercontent.com/cyberdeliaAI/ComfyUI-NegPiP-ZImage/main/assets/icon.png"
