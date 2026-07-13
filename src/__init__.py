@@ -1,1 +1,1 @@
-"""Z-Image-only NegPiP implementation for ComfyUI."""
+"""Multi-model NegPiP prompt implementation for ComfyUI."""

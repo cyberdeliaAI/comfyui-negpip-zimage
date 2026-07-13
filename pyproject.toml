@@ -1,15 +1,15 @@
 [project]
 name = "comfyui-negpip-zimage"
-description = "Standalone NegPiP negative prompt weighting for Z-Image and Z-Image Turbo in ComfyUI."
-version = "1.2.0"
+description = "One-node NegPiP prompting for Z-Image, SD1, SDXL, and Anima in ComfyUI."
+version = "2.0.0"
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
 
 [project.urls]
-Repository = "https://github.com/cyberdeliaAI/ComfyUI-NegPiP-ZImage"
+Repository = "https://github.com/cyberdeliaAI/comfyui-negpip-zimage"
 
 [tool.comfy]
 PublisherId = "cyberdelia"
-DisplayName = "NegPiP for Z-Image"
-Icon = "https://raw.githubusercontent.com/cyberdeliaAI/ComfyUI-NegPiP-ZImage/main/assets/icon.png"
+DisplayName = "NegPiP Prompt (Multi-Model)"
+Icon = "https://raw.githubusercontent.com/cyberdeliaAI/comfyui-negpip-zimage/main/assets/icon.png"

@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.0
+
+- Expanded the single combined prompt node with SD1, SDXL, SDXL Refiner, and
+  Anima support alongside Z-Image and Z-Image Turbo.
+- Added dedicated SD and Anima patch modules based on the current upstream
+  ComfyUI-ppm implementation.
+- Updated the Anima path for ComfyUI's current Cosmos rotary-position API.
+- Added optional Advanced CLIP Text Encode compatibility for the SD patch.
+- Renamed the visible node to `NegPiP Prompt (Multi-Model)` while retaining the
+  original `ZImageNegPipPrompt` node ID for saved-workflow compatibility.
+- Added detection for an existing ComfyUI-ppm NegPiP patch to avoid applying a
+  second patch to the same branch.
+- Documented Flux as unsupported because its upstream implementation is
+  explicitly unmaintained and no longer matches the current ComfyUI API.
+
 ## 1.2.0
 
 - Added a `compiled_prompt` STRING output for Preview Any and debugging.
