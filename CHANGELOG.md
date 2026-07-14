@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.1
+
+- Fixed false rejection of the official Anima CLIP, whose loaded text encoder
+  is exposed as `qwen3_06b` rather than `t5xxl`.
+- Kept Anima's internal `t5xxl_weights` metadata path for the NegPiP attention
+  mask, matching current ComfyUI and ComfyUI-ppm behavior.
+
 ## 2.0.0
 
 - Expanded the single combined prompt node with SD1, SDXL, SDXL Refiner, and

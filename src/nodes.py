@@ -31,6 +31,7 @@ PATCH_KEY = "cyberdelia_negpip_zimage"
 UPSTREAM_PATCH_KEY = "ppm_negpip"
 QWEN_ENCODER = "qwen3_4b"
 SUPPORTED_ENCODERS = ["clip_g", "clip_l", "t5xxl", "llama", "qwen3_06b"]
+ANIMA_ENCODERS = ["qwen3_06b", "qwen3_06b_base", "qwen_3_06b_base"]
 
 
 class NegPipPrompt(io.ComfyNode):
@@ -74,8 +75,12 @@ class NegPipPrompt(io.ComfyNode):
             raise ValueError("The connected CLIP does not contain the Z-Image qwen3_4b encoder.")
         if family == "sd" and not encoders:
             raise ValueError("The connected CLIP has no supported SD1/SDXL text encoder.")
-        if family == "anima" and not hasattr(c.patcher.model, "t5xxl"):
-            raise ValueError("The connected CLIP does not contain Anima's t5xxl encoder.")
+        if family == "anima" and not any(
+            hasattr(c.patcher.model, name) for name in ANIMA_ENCODERS
+        ):
+            raise ValueError(
+                "The connected CLIP does not contain Anima's Qwen3-0.6B text encoder."
+            )
 
         if not cls._uses_upstream_patch(m, c):
             if family in {"sd", "anima"}:

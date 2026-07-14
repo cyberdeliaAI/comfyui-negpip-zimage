@@ -100,7 +100,7 @@ SD1/SDXL workflows.
 | Z-Image / Z-Image Turbo | Supported | Lumina2 / NextDiT / Qwen3-4B |
 | SD1 | Supported | paired CLIP embeddings + cross-attention patch |
 | SDXL / SDXL Refiner | Supported | paired CLIP embeddings + cross-attention patch |
-| Anima | Supported | T5 weight mask + current Cosmos attention API |
+| Anima | Supported | Qwen3-0.6B encoder + internal T5 weight mask + current Cosmos API |
 | Flux | Not supported | upstream marks its NegPiP path as unmaintained |
 
 The original workflow node ID, `ZImageNegPipPrompt`, is retained so workflows

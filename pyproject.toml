@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-negpip-zimage"
 description = "One-node NegPiP prompting for Z-Image, SD1, SDXL, and Anima in ComfyUI."
-version = "2.0.0"
+version = "2.0.1"
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.10"
