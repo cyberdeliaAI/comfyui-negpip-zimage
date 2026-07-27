@@ -6,10 +6,19 @@ from typing import Any
 
 import torch
 
+import comfy.model_management as comfy_model_management
 import comfy.utils
 from comfy.ldm.flux.math import apply_rope
 from comfy.ldm.lumina.model import JointAttention
 from comfy.ldm.modules.attention import optimized_attention_masked
+
+try:
+    import comfy.ops as comfy_ops
+    import comfy.quant_ops as comfy_quant_ops
+except ImportError:
+    # Older ComfyUI releases use the unfused normalization/RoPE path below.
+    comfy_ops = None
+    comfy_quant_ops = None
 
 NEGPIP_TOKENS_KEY = "cyberdelia_negpip_zimage_tokens"
 NEGPIP_STRENGTH_KEY = "cyberdelia_negpip_zimage_strength"
@@ -166,10 +175,19 @@ def _extend_attention_mask(mask, original_length: int, negative_count: int, suff
 
 
 def lumina_diffusion_negpip_wrapper(executor, *args, **kwargs):
-    transformer_options: dict[str, Any] = kwargs.get("transformer_options", {})
+    transformer_options: dict[str, Any] = kwargs.get("transformer_options") or {}
     negative_embeddings = kwargs.pop(NEGPIP_TOKENS_KEY, None)
     negative_strength = kwargs.pop(NEGPIP_STRENGTH_KEY, None)
-    suffix_length = kwargs.pop(NEGPIP_SUFFIX_LENGTH_KEY, 5)
+    suffix_length = kwargs.pop(NEGPIP_SUFFIX_LENGTH_KEY, None)
+
+    # Some custom guiders move additional model conditions into
+    # transformer_options instead of forwarding them as keyword arguments.
+    if negative_embeddings is None:
+        negative_embeddings = transformer_options.get(NEGPIP_TOKENS_KEY)
+    if negative_strength is None:
+        negative_strength = transformer_options.get(NEGPIP_STRENGTH_KEY)
+    if suffix_length is None:
+        suffix_length = transformer_options.get(NEGPIP_SUFFIX_LENGTH_KEY, 5)
 
     if negative_embeddings is None:
         return executor(*args, **kwargs)
@@ -255,14 +273,19 @@ def lumina_diffusion_negpip_wrapper(executor, *args, **kwargs):
         NEGPIP_STRENGTH_KEY: negative_strength,
         NEGPIP_SUFFIX_LENGTH_KEY: suffix_length,
     }
+    missing = object()
+    previous_state = {key: transformer_options.get(key, missing) for key in state}
     transformer_options.update(state)
     kwargs["transformer_options"] = transformer_options
 
     try:
         return executor(*tuple(mutable_args), **kwargs)
     finally:
-        for key in state:
-            transformer_options.pop(key, None)
+        for key, value in previous_state.items():
+            if value is missing:
+                transformer_options.pop(key, None)
+            else:
+                transformer_options[key] = value
 
 
 def make_joint_attention_forward_negpip(block: JointAttention):
@@ -290,7 +313,7 @@ def make_joint_attention_forward_negpip(block: JointAttention):
             end = start + negative_count
             if 0 <= start < end <= sequence_length:
                 if strength is None:
-                    strength = torch.ones(
+                    strength = -torch.ones(
                         (batch_size, negative_count), dtype=xv.dtype, device=xv.device
                     )
                 else:
@@ -300,14 +323,64 @@ def make_joint_attention_forward_negpip(block: JointAttention):
 
                 for batch_index in range(batch_size):
                     if not _is_unconditional(batch_index, batch_size, cond_or_uncond):
-                        scale = torch.abs(strength[batch_index : batch_index + 1]).view(
+                        signed_scale = strength[batch_index : batch_index + 1].view(
                             1, negative_count, 1, 1
                         )
-                        xv[batch_index : batch_index + 1, start:end] *= -scale
+                        xv[batch_index : batch_index + 1, start:end] *= signed_scale
 
-        xq = block.q_norm(xq)
-        xk = block.k_norm(xk)
-        xq, xk = apply_rope(xq, xk, freqs_cis)
+        # Keep this in sync with ComfyUI's current JointAttention.forward.
+        # Quantized/fused QK normalization is important for current Z-Image
+        # models; the fallback remains compatible with older/backward paths.
+        quant_ck = getattr(comfy_quant_ops, "ck", None)
+        has_fused_ops = (
+            comfy_ops is not None
+            and hasattr(comfy_ops, "cast_bias_weight")
+            and hasattr(comfy_ops, "uncast_bias_weight")
+        )
+        has_fused_rope = (
+            quant_ck is not None
+            and (
+                hasattr(quant_ck, "rms_rope")
+                if block.n_local_heads == block.n_local_kv_heads
+                else hasattr(quant_ck, "rms_rope1")
+            )
+        )
+        can_use_fused_qk = (
+            getattr(block, "qk_norm", False)
+            and has_fused_ops
+            and has_fused_rope
+            and not getattr(comfy_model_management, "in_training", False)
+        )
+        if can_use_fused_qk:
+            q_scale, _, q_offload_stream = comfy_ops.cast_bias_weight(
+                block.q_norm, xq, offloadable=True
+            )
+            k_scale, _, k_offload_stream = comfy_ops.cast_bias_weight(
+                block.k_norm, xk, offloadable=True
+            )
+            norm_epsilon = getattr(block.q_norm, "eps", None)
+            epsilon = (
+                norm_epsilon
+                if norm_epsilon is not None
+                else torch.finfo(torch.float32).eps
+            )
+            if block.n_local_heads == block.n_local_kv_heads:
+                xq, xk = quant_ck.rms_rope(
+                    xq, xk, freqs_cis, q_scale, k_scale, epsilon
+                )
+            else:
+                xq = quant_ck.rms_rope1(xq, freqs_cis, q_scale, epsilon)
+                xk = quant_ck.rms_rope1(xk, freqs_cis, k_scale, epsilon)
+            comfy_ops.uncast_bias_weight(
+                block.q_norm, q_scale, None, q_offload_stream
+            )
+            comfy_ops.uncast_bias_weight(
+                block.k_norm, k_scale, None, k_offload_stream
+            )
+        else:
+            xq = block.q_norm(xq)
+            xk = block.k_norm(xk)
+            xq, xk = apply_rope(xq, xk, freqs_cis)
 
         repetitions = block.n_local_heads // block.n_local_kv_heads
         if repetitions >= 1:

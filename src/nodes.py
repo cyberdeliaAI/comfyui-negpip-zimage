@@ -4,6 +4,8 @@ import copy
 from functools import partial
 from typing import Any
 
+import torch
+
 import comfy.conds
 import comfy.patcher_extension
 from comfy.ldm.lumina.model import JointAttention, NextDiT
@@ -55,7 +57,7 @@ class NegPipPrompt(io.ComfyNode):
                 io.String.Input("negative", force_input=True),
             ],
             outputs=[
-                io.Model.Output(),
+                io.Model.Output(display_name="patched_model"),
                 io.Conditioning.Output(display_name="positive"),
                 io.Conditioning.Output(display_name="negative"),
                 io.String.Output(display_name="compiled_prompt"),
@@ -82,7 +84,8 @@ class NegPipPrompt(io.ComfyNode):
                 "The connected CLIP does not contain Anima's Qwen3-0.6B text encoder."
             )
 
-        if not cls._uses_upstream_patch(m, c):
+        uses_upstream_patch = cls._uses_upstream_patch(m, c)
+        if not uses_upstream_patch:
             if family in {"sd", "anima"}:
                 patch_advanced_encode()
 
@@ -95,6 +98,8 @@ class NegPipPrompt(io.ComfyNode):
 
         merged_prompt = merge_prompts(kwargs["positive"], kwargs["negative"])
         positive = c.encode_from_tokens_scheduled(c.tokenize(merged_prompt))
+        if family == "zimage" and not uses_upstream_patch and kwargs["negative"].strip():
+            cls._validate_zimage_negpip_conditioning(positive)
         negative = c.encode_from_tokens_scheduled(c.tokenize(""))
 
         return io.NodeOutput(m, positive, negative, merged_prompt)
@@ -188,17 +193,55 @@ class NegPipPrompt(io.ComfyNode):
             lumina_diffusion_negpip_wrapper,
         )
 
-        patched_layers = 0
+        patched_main_layers = 0
+        patched_context_refiners = 0
         for block_name, block in diffusion_model.named_modules():
-            if isinstance(block, JointAttention) and block_name.startswith("layers."):
+            if not isinstance(block, JointAttention):
+                continue
+
+            is_main_layer = block_name.startswith("layers.")
+            is_context_refiner = block_name.startswith("context_refiner.")
+            if is_main_layer or is_context_refiner:
                 model.add_object_patch(
                     f"diffusion_model.{block_name}.forward",
                     make_joint_attention_forward_negpip(block),
                 )
-                patched_layers += 1
+                if is_main_layer:
+                    patched_main_layers += 1
+                else:
+                    patched_context_refiners += 1
 
-        if patched_layers == 0:
+        if patched_main_layers == 0:
             raise RuntimeError("No compatible Z-Image JointAttention layers were found.")
+        if patched_context_refiners == 0:
+            raise RuntimeError("No compatible Z-Image context-refiner layers were found.")
+
+    @staticmethod
+    def _validate_zimage_negpip_conditioning(conditioning) -> None:
+        """Fail fast when a negative prompt loses its Z-Image metadata."""
+
+        for item in conditioning:
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            metadata = item[1]
+            if not isinstance(metadata, dict):
+                continue
+
+            tokens = metadata.get(NEGPIP_TOKENS_KEY)
+            strength = metadata.get(NEGPIP_STRENGTH_KEY)
+            if tokens is None or strength is None:
+                continue
+            if not torch.is_tensor(strength) or strength.numel() == 0:
+                continue
+            if torch.any(strength >= 0).item():
+                raise RuntimeError("Z-Image NegPiP produced a non-negative strength.")
+            return
+
+        raise RuntimeError(
+            "The Z-Image negative prompt was compiled, but its NegPiP metadata "
+            "was lost during CLIP encoding. Do not route compiled_prompt through "
+            "another CLIP Text Encode node."
+        )
 
     @staticmethod
     def _patch_sd(model: ModelPatcher, clip: CLIP, encoders: list[str]) -> None:

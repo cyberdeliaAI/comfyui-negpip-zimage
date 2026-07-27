@@ -47,7 +47,8 @@ a sharp portrait, detailed eyes, (blurry background:-1), (text:-1.3)
 
 The outputs are:
 
-- the patched `MODEL`;
+- `patched_model`: the patched `MODEL` that must be connected to the sampler or
+  guider;
 - positive `CONDITIONING` containing the compiled prompt;
 - empty negative `CONDITIONING` for the existing guider/sampler workflow;
 - `compiled_prompt` as a `STRING`, showing exactly what was sent to the
@@ -92,6 +93,23 @@ models, but long prompts can still use substantially more memory.
 
 Z-Image Turbo normally remains at CFG `1.0`. Use the normal CFG settings for
 SD1/SDXL workflows.
+
+For Z-Image, compare prompt changes with the same seed. Broad semantic
+categories can react non-linearly, so start with a strength around `0.25` to
+`0.5` before trying `1.0`.
+
+## Z-Image troubleshooting
+
+- Connect `patched_model` from this node to the sampler or guider. Do not keep
+  that input connected directly to the original model loader.
+- Connect the node's positive and negative `CONDITIONING` outputs directly to
+  the corresponding sampler/guider inputs.
+- Use `compiled_prompt` only for inspection. Do not send it through another
+  CLIP Text Encode node; Z-Image's normal tokenizer does not interpret NegPiP
+  weights.
+- With `Asian` in the negative input, `compiled_prompt` must show
+  `(Asian:-1)`. For a weaker test, enter `(Asian:0.4)` in the negative input,
+  which compiles to `(Asian:-0.4)`.
 
 ## Compatibility
 

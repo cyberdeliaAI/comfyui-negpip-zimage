@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.2
+
+- Fixed Z-Image negative concepts leaking positively through the unpatched
+  context-refiner attention blocks before reaching the main NegPiP blocks.
+- Updated the Z-Image JointAttention replacement to match ComfyUI's current
+  fused QK-normalization and RoPE path.
+- Restored the `transformer_options` fallback used by custom guiders that move
+  additional model conditions out of the direct wrapper arguments.
+- Added a fail-fast check when a non-empty Z-Image negative prompt loses its
+  NegPiP token or strength metadata during CLIP encoding.
+- Renamed the model output label to `patched_model` to make the required
+  sampler/guider connection explicit.
+
 ## 2.0.1
 
 - Fixed false rejection of the official Anima CLIP, whose loaded text encoder
