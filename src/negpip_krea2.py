@@ -1206,20 +1206,85 @@ def _restore_runtime_model_patches(dm: Any):
             _restore_block_runtime_cfg(block)
 
 
+def _bind_krea2_diffusion_call(
+    executor,
+    x,
+    timesteps,
+    context,
+    call_args,
+    call_kwargs,
+) -> inspect.BoundArguments:
+    """Bind either Krea 2 _forward signature without shifting arguments."""
+
+    try:
+        signature = inspect.signature(executor.original)
+        bound = signature.bind_partial(
+            x,
+            timesteps,
+            context,
+            *call_args,
+            **call_kwargs,
+        )
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Krea 2 NegPiP could not bind this ComfyUI SingleStreamDiT "
+            "_forward signature."
+        ) from exc
+
+    required = {"context", "attention_mask", "transformer_options"}
+    missing = required.difference(signature.parameters)
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise RuntimeError(
+            "Krea 2 NegPiP found an unsupported SingleStreamDiT _forward "
+            f"signature; missing: {names}."
+        )
+    return bound
+
+
+def _execute_krea2_diffusion_call(
+    executor,
+    bound: inspect.BoundArguments,
+    *,
+    context,
+    attention_mask,
+    transformer_options,
+):
+    """Call the next wrapper using the bound underlying signature."""
+
+    bound.arguments["context"] = context
+    bound.arguments["attention_mask"] = attention_mask
+    bound.arguments["transformer_options"] = transformer_options
+    return executor(*bound.args, **bound.kwargs)
+
+
 def krea2_negpip_wrapper(
     executor,
     x,
     timesteps,
     context,
-    attention_mask=None,
-    ref_latents=None,
-    transformer_options=None,
-    **kwargs,
+    *call_args,
+    **call_kwargs,
 ):
-    transformer_options = transformer_options or {}
+    bound = _bind_krea2_diffusion_call(
+        executor,
+        x,
+        timesteps,
+        context,
+        call_args,
+        call_kwargs,
+    )
+    attention_mask = bound.arguments.get("attention_mask")
+    transformer_options = bound.arguments.get("transformer_options") or {}
     cfg = transformer_options.get(WRAPPER_KEY, {})
     if not cfg or not cfg.get("enabled", True):
-        return executor(x, timesteps, context, attention_mask, ref_latents, transformer_options, **kwargs)
+        return _execute_krea2_diffusion_call(
+            executor,
+            bound,
+            context=context,
+            attention_mask=attention_mask,
+            transformer_options=transformer_options,
+        )
 
     dm = executor.class_obj
     if not _is_krea2_dm(dm):
@@ -1227,14 +1292,12 @@ def krea2_negpip_wrapper(
         attention_mask = _strip_mask_with_indices(attention_mask, keep_indices, context.shape[1])
         if negative_positions is not None:
             raise RuntimeError("Krea2 NegPiP conditioning was connected to a non-Krea2 diffusion model.")
-        return executor(
-            x,
-            timesteps,
-            context_without_sidecar,
-            attention_mask,
-            ref_latents,
-            transformer_options,
-            **kwargs,
+        return _execute_krea2_diffusion_call(
+            executor,
+            bound,
+            context=context_without_sidecar,
+            attention_mask=attention_mask,
+            transformer_options=transformer_options,
         )
 
     original_context_len = context.shape[1]
@@ -1243,7 +1306,13 @@ def krea2_negpip_wrapper(
     if negative_positions is None:
         metadata_fallback = _negative_metadata_from_transformer_options(transformer_options, context.shape[1])
         if metadata_fallback is None:
-            return executor(x, timesteps, context, attention_mask, ref_latents, transformer_options, **kwargs)
+            return _execute_krea2_diffusion_call(
+                executor,
+                bound,
+                context=context,
+                attention_mask=attention_mask,
+                transformer_options=transformer_options,
+            )
         negative_positions, trim_to_length = metadata_fallback
         if trim_to_length is not None and trim_to_length < int(context.shape[1]):
             context = context[:, :trim_to_length, :]
@@ -1257,7 +1326,13 @@ def krea2_negpip_wrapper(
     total_neg = sum(len(r) for r in negative_positions)
     value_strength = _bounded_float(cfg.get("value_strength", 1.0), 1.0, 0.0, 8.0)
     if total_neg == 0 or value_strength == 0.0:
-        return executor(x, timesteps, context, attention_mask, ref_latents, transformer_options, **kwargs)
+        return _execute_krea2_diffusion_call(
+            executor,
+            bound,
+            context=context,
+            attention_mask=attention_mask,
+            transformer_options=transformer_options,
+        )
 
     # Keep the original transformer_options shape but install a per-call active cfg.
     # The temporary block/wv forward wrappers read this and are restored after this call.
@@ -1275,14 +1350,12 @@ def krea2_negpip_wrapper(
     with _RUNTIME_PATCH_LOCK:
         try:
             _install_runtime_model_patches(dm, active_cfg)
-            return executor(
-                x,
-                timesteps,
-                context,
-                attention_mask,
-                ref_latents,
-                new_transformer_options,
-                **kwargs,
+            return _execute_krea2_diffusion_call(
+                executor,
+                bound,
+                context=context,
+                attention_mask=attention_mask,
+                transformer_options=new_transformer_options,
             )
         finally:
             _restore_runtime_model_patches(dm)

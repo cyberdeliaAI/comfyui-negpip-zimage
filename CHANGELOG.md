@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.1
+
+- Fixed `TypeError: SingleStreamDiT._forward() takes from 4 to 6 positional
+  arguments but 7 were given` on ComfyUI versions whose Krea 2 diffusion
+  signature does not yet have a separate `ref_latents` parameter.
+- Added signature-aware argument binding for both older and current Krea 2
+  diffusion wrappers while preserving reference latents, extra keywords, and
+  wrapper chaining.
+
 ## 2.1.0
 
 - Added Krea 2 support to the existing single multi-model prompt node.
