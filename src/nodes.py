@@ -7,6 +7,7 @@ from typing import Any
 import torch
 
 import comfy.conds
+import comfy.model_base
 import comfy.patcher_extension
 from comfy.ldm.lumina.model import JointAttention, NextDiT
 from comfy.model_base import Anima, BaseModel, Flux, Lumina2, SDXL, SDXLRefiner
@@ -32,6 +33,7 @@ from .prompt_merge import merge_prompts
 PATCH_KEY = "cyberdelia_negpip_zimage"
 UPSTREAM_PATCH_KEY = "ppm_negpip"
 QWEN_ENCODER = "qwen3_4b"
+KREA2_ENCODER = "qwen3vl_4b"
 SUPPORTED_ENCODERS = ["clip_g", "clip_l", "t5xxl", "llama", "qwen3_06b"]
 ANIMA_ENCODERS = ["qwen3_06b", "qwen3_06b_base", "qwen_3_06b_base"]
 
@@ -47,8 +49,8 @@ class NegPipPrompt(io.ComfyNode):
             display_name="NegPiP Prompt (Multi-Model)",
             category="conditioning/NegPiP",
             description=(
-                "Patches Z-Image, SD1, SDXL, or Anima and merges positive/negative "
-                "prompts into NegPiP conditioning."
+                "Patches Z-Image, Krea 2, SD1, SDXL, or Anima and merges "
+                "positive/negative prompts into NegPiP conditioning."
             ),
             inputs=[
                 io.Model.Input("model"),
@@ -68,24 +70,42 @@ class NegPipPrompt(io.ComfyNode):
     def execute(cls, **kwargs) -> io.NodeOutput:
         model: ModelPatcher = kwargs["model"]
         clip: CLIP = kwargs["clip"]
-        m = model.clone()
-        c = clip.clone()
-        family = cls._model_family(m)
-        encoders = [name for name in SUPPORTED_ENCODERS if hasattr(c.patcher.model, name)]
+        family = cls._model_family(model)
+        clip_model = getattr(clip, "cond_stage_model", clip.patcher.model)
+        encoders = [name for name in SUPPORTED_ENCODERS if hasattr(clip_model, name)]
 
-        if family == "zimage" and not hasattr(c.patcher.model, QWEN_ENCODER):
+        if family == "zimage" and not hasattr(clip_model, QWEN_ENCODER):
             raise ValueError("The connected CLIP does not contain the Z-Image qwen3_4b encoder.")
+        if family == "krea2" and not hasattr(clip_model, KREA2_ENCODER):
+            raise ValueError(
+                "The connected CLIP does not contain Krea 2's qwen3vl_4b encoder. "
+                "Load it with CLIPLoader type 'krea2'."
+            )
         if family == "sd" and not encoders:
             raise ValueError("The connected CLIP has no supported SD1/SDXL text encoder.")
         if family == "anima" and not any(
-            hasattr(c.patcher.model, name) for name in ANIMA_ENCODERS
+            hasattr(clip_model, name) for name in ANIMA_ENCODERS
         ):
             raise ValueError(
                 "The connected CLIP does not contain Anima's Qwen3-0.6B text encoder."
             )
 
-        uses_upstream_patch = cls._uses_upstream_patch(m, c)
-        if not uses_upstream_patch:
+        if family == "krea2":
+            # Imported lazily so older ComfyUI installations can still use the
+            # other model families without importing the newer Qwen3-VL stack.
+            from .negpip_krea2 import (
+                patch_krea2_negpip,
+                validate_krea2_negpip_conditioning,
+            )
+
+            m, c = patch_krea2_negpip(model, clip)
+            uses_upstream_patch = False
+        else:
+            m = model.clone()
+            c = clip.clone()
+            uses_upstream_patch = cls._uses_upstream_patch(m, c)
+
+        if not uses_upstream_patch and family != "krea2":
             if family in {"sd", "anima"}:
                 patch_advanced_encode()
 
@@ -100,6 +120,8 @@ class NegPipPrompt(io.ComfyNode):
         positive = c.encode_from_tokens_scheduled(c.tokenize(merged_prompt))
         if family == "zimage" and not uses_upstream_patch and kwargs["negative"].strip():
             cls._validate_zimage_negpip_conditioning(positive)
+        if family == "krea2" and kwargs["negative"].strip():
+            validate_krea2_negpip_conditioning(positive)
         negative = c.encode_from_tokens_scheduled(c.tokenize(""))
 
         return io.NodeOutput(m, positive, negative, merged_prompt)
@@ -109,6 +131,9 @@ class NegPipPrompt(io.ComfyNode):
         model_type = type(model.model)
         if issubclass(model_type, Lumina2):
             return "zimage"
+        krea2_type = getattr(comfy.model_base, "Krea2", None)
+        if krea2_type is not None and issubclass(model_type, krea2_type):
+            return "krea2"
         if issubclass(model_type, Anima):
             return "anima"
         if issubclass(model_type, Flux):
@@ -120,7 +145,7 @@ class NegPipPrompt(io.ComfyNode):
             return "sd"
         raise ValueError(
             "Unsupported model architecture: "
-            f"{model_type.__name__}. Supported: Z-Image, SD1, SDXL, and Anima."
+            f"{model_type.__name__}. Supported: Z-Image, Krea 2, SD1, SDXL, and Anima."
         )
 
     @staticmethod

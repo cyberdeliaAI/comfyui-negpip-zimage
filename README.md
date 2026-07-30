@@ -1,9 +1,9 @@
 # ComfyUI NegPiP Prompt
 
 A standalone, single-node NegPiP implementation for **Z-Image**, **Z-Image
-Turbo**, **SD1**, **SDXL**, and **Anima**. The node patches the connected
-model, merges separate positive and negative text strings, and returns the
-conditioning required by a normal ComfyUI sampling workflow.
+Turbo**, **Krea 2**, **SD1**, **SDXL**, and **Anima**. The node patches the
+connected model, merges separate positive and negative text strings, and
+returns the conditioning required by a normal ComfyUI sampling workflow.
 
 The package keeps its original Registry/repository name,
 `comfyui-negpip-zimage`, but version 2.x is no longer limited to Z-Image.
@@ -18,6 +18,9 @@ git clone https://github.com/cyberdeliaAI/comfyui-negpip-zimage
 
 Restart ComfyUI afterwards. No additional Python packages are required beyond
 the dependencies included with an up-to-date ComfyUI installation.
+
+Krea 2 support requires a ComfyUI version that includes the native Krea 2
+model and `krea2` CLIP loader type.
 
 ## Usage
 
@@ -59,7 +62,8 @@ negative conditioning is intentionally empty: NegPiP processes negative
 concepts inside the compiled positive conditioning.
 
 The node consumes and encodes the connected CLIP internally, so a CLIP output
-is not required.
+is not required. This also applies to Krea 2: its patched CLIP clone is used
+immediately for the node's conditioning output.
 
 ## Prompt strength and length
 
@@ -87,9 +91,9 @@ unexpected results. Group related concepts and start with lower strengths:
 ```
 
 There is no node-level character limit. The effective token/context limit
-depends on the connected model and text encoder. Z-Image's current ComfyUI
-Qwen3-4B configuration supports a much longer context than CLIP-based SD
-models, but long prompts can still use substantially more memory.
+depends on the connected model and text encoder. The Qwen-based Z-Image and
+Krea 2 encoders support a much longer context than CLIP-based SD models, but
+long prompts can still use substantially more memory.
 
 Z-Image Turbo normally remains at CFG `1.0`. Use the normal CFG settings for
 SD1/SDXL workflows.
@@ -111,11 +115,30 @@ categories can react non-linearly, so start with a strength around `0.25` to
   `(Asian:-1)`. For a weaker test, enter `(Asian:0.4)` in the negative input,
   which compiles to `(Asian:-0.4)`.
 
+## Krea 2 notes
+
+- Load the text encoder with ComfyUI's `CLIPLoader` type `krea2`; a regular
+  Qwen, Z-Image, or Flux CLIP is not interchangeable.
+- Connect `patched_model` to the sampler and use the node's conditioning
+  outputs directly, just as for Z-Image.
+- The integrated Krea 2 path applies NegPiP to all 28 main transformer blocks
+  and both text-fusion refiner blocks. Enabling the refiners is intentionally
+  stronger than the standalone upstream node's default and is intended to
+  reduce positive leakage into neighboring text tokens before the main model
+  blocks. Start with lower prompt magnitudes if the effect is too strong.
+- Prompt magnitudes remain available in the negative input. For example,
+  `(blurry:0.4)` compiles to `(blurry:-0.4)`.
+- Complex conditioning transforms that normalize or clamp the Krea 2
+  conditioning tensor may destroy its embedded NegPiP sidecar. A metadata
+  fallback is included, but direct connections from this node remain the
+  safest path.
+
 ## Compatibility
 
 | Architecture | Status | Patch path |
 | --- | --- | --- |
 | Z-Image / Z-Image Turbo | Supported | Lumina2 / NextDiT / Qwen3-4B |
+| Krea 2 | Supported | SingleStreamDiT / Qwen3-VL-4B / 12-layer text fusion |
 | SD1 | Supported | paired CLIP embeddings + cross-attention patch |
 | SDXL / SDXL Refiner | Supported | paired CLIP embeddings + cross-attention patch |
 | Anima | Supported | Qwen3-0.6B encoder + internal T5 weight mask + current Cosmos API |
@@ -142,6 +165,9 @@ This implementation is derived from:
 - [ComfyUI-ppm](https://github.com/pamparamm/ComfyUI-ppm) by pamparamm;
 - the Z-Image adaptation in
   [BigStationW/ComfyUI-ppm](https://github.com/BigStationW/ComfyUI-ppm);
+- [ComfyUI-krea2-negpip](https://github.com/blue-pen5805/ComfyUI-krea2-negpip)
+  by blue-pen5805 (adapted from commit
+  [`3740add`](https://github.com/blue-pen5805/ComfyUI-krea2-negpip/commit/3740add9dbdc9f254a2befda30e95ba95e3b115d));
 - [ComfyUI-NegPipPromptMerge](https://github.com/Deathspike/ComfyUI-NegPipPromptMerge)
   by Deathspike;
 - NegPiP by laksjdjf and hako-mikan.

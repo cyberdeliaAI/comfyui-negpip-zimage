@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.1.0
+
+- Added Krea 2 support to the existing single multi-model prompt node.
+- Added automatic detection of ComfyUI's native Krea 2 model and
+  `qwen3vl_4b` text encoder.
+- Integrated the current Krea 2 tokenizer, 12-layer conditioning, sidecar
+  metadata, reference-latent, and sampler-wrapper paths from
+  `blue-pen5805/ComfyUI-krea2-negpip`.
+- Enabled NegPiP in all 28 Krea 2 main transformer blocks and both text-fusion
+  refiner blocks to reduce negative concepts leaking positively between text
+  tokens before the main model blocks.
+- Serialized Krea 2's temporary attention-forward patches so overlapping
+  executions cannot restore one another's model state mid-call.
+- Added fail-fast validation for mismatched Krea 2 models, CLIP encoders, and
+  missing negative-token metadata.
+- Kept the node's four-input workflow and existing outputs unchanged.
+
 ## 2.0.2
 
 - Fixed Z-Image negative concepts leaking positively through the unpatched
