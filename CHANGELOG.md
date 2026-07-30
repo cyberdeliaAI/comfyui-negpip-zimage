@@ -14,9 +14,6 @@
 - Added Krea 2 support to the existing single multi-model prompt node.
 - Added automatic detection of ComfyUI's native Krea 2 model and
   `qwen3vl_4b` text encoder.
-- Integrated the current Krea 2 tokenizer, 12-layer conditioning, sidecar
-  metadata, reference-latent, and sampler-wrapper paths from
-  `blue-pen5805/ComfyUI-krea2-negpip`.
 - Enabled NegPiP in all 28 Krea 2 main transformer blocks and both text-fusion
   refiner blocks to reduce negative concepts leaking positively between text
   tokens before the main model blocks.
