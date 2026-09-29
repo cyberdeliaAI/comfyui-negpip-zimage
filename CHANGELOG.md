@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.2
+
+- Fixed numeric emoticons such as `:3` disappearing from compiled prompts
+  (issue #2). Numeric colons are now parsed as weights only inside parentheses
+  with a complete numeric suffix before the closing parenthesis.
+- Preserved literal ratios, times, escaped colons, and malformed weight text;
+  added regression tests for positive, negative, and nested prompt weights.
+
 ## 2.1.1
 
 - Fixed `TypeError: SingleStreamDiT._forward() takes from 4 to 6 positional

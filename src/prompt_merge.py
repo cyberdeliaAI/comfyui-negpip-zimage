@@ -77,7 +77,7 @@ class _TagParser:
             elif current == ")" and previous != "\\":
                 group = group.parent or _Group(1.0, None)
                 builders[-1].enter(group)
-            elif current == ":":
+            elif current == ":" and previous != "\\" and group.parent is not None:
                 weight, consumed = self._parse_weight(index + 1)
                 if weight is None:
                     builders[-1].append(current)
@@ -99,20 +99,12 @@ class _TagParser:
                 yield tag
 
     def _parse_weight(self, start: int) -> tuple[float | None, int]:
-        end = start
-        while end < len(self.text):
-            character = self.text[end]
-            if character in ".-+" or character.isdigit() or character.isspace():
-                end += 1
-            else:
-                break
-
-        candidate = self.text[start:end]
-        match = re.search(r"-?\s*(?:\d*\s*\.\s*\d+|\d+\s*\.\s*\d*|\d+)", candidate)
+        # Only a complete numeric suffix immediately before ')' is a weight.
+        # Bare emoticons, ratios, times, and numeric text must remain literal.
+        match = re.match(r"\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*(?=\))", self.text[start:])
         if not match:
             return None, 0
-        value = float(re.sub(r"\s", "", match.group(0)))
-        return value, len(candidate.rstrip())
+        return float(match.group(1)), match.end()
 
 
 class _Tag:

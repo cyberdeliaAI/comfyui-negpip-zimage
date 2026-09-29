@@ -88,6 +88,9 @@ The node changes these to weights of `-1` and `-0.4`, respectively. Do not
 enter a negative weight in the negative input unless you deliberately want the
 same absolute strength; the node always makes negative-input weights negative.
 
+Explicit weights use parentheses, such as `(detail:1.3)`. Bare text such as
+`:3`, `16:9`, `12:30`, or `detail:1.3` stays literal in both prompt inputs.
+
 Large negative lists at strength `1.0` can dominate the prompt and produce
 unexpected results. Group related concepts and start with lower strengths:
 
